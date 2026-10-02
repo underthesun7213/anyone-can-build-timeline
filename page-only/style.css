@@ -150,3 +150,71 @@ button {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* The small buttons: Reply under each post, and Cancel in the reply form. */
+.small-button {
+  padding: 4px 16px;
+  border: 2px solid var(--border);
+  background: transparent;
+  color: var(--quiet);
+  font-size: 18px;
+}
+
+/* The Reply button of a post. */
+.post > .small-button {
+  margin-top: 8px;
+}
+
+/* While the reply form is open under a post, its Reply button is filled in. */
+.small-button[aria-expanded="true"] {
+  background: var(--border);
+  color: var(--background);
+}
+
+/* The reply form opens under a post when its Reply button is pressed. */
+.reply-form {
+  margin-top: 12px;
+}
+
+/* The name box in the reply form: a little space before "Your reply". */
+.reply-form input {
+  margin-bottom: 12px;
+}
+
+.reply-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.reply-buttons button {
+  padding: 6px 22px;
+  border: 2px solid var(--button);
+  font-size: 18px;
+}
+
+.reply-buttons .small-button {
+  border-color: var(--border);
+}
+
+/* No empty space under the reply form while there is nothing to say. */
+.reply-form .status {
+  min-height: 0;
+  margin: 8px 0 0;
+}
+
+/* The replies to a post sit under it. A reply to a reply sits one step further in,
+   and that is the deepest: a reply to a reply has no Reply button. */
+.replies {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.replies .post {
+  margin: 12px 0 0 6px;
+  padding: 2px 0 2px 16px;
+  border: none;
+  border-left: 4px solid var(--border);
+  border-radius: 0;
+  background: none;
+}

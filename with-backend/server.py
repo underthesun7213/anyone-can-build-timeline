@@ -3,6 +3,7 @@
 This file has three parts:
   CONTROLLER  reads each request and decides what to do
   MODEL       the rules, and the database (two tables: users and posts)
+              A reply is a post that points at the post it answers.
   VIEW        turns database rows into the JSON answer
 It uses only the Python standard library, so there is nothing to install.
 """
@@ -68,7 +69,8 @@ class TimelineHandler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": "The request must be a JSON object."})
             return
         try:
-            row = save_post(self.server.db_path, data.get("author"), data.get("text"))
+            row = save_post(self.server.db_path, data.get("author"), data.get("text"),
+                            data.get("reply_to"))
         except RuleBroken as problem:
             self.send_json(400, {"error": str(problem)})
             return
@@ -98,12 +100,15 @@ class TimelineHandler(BaseHTTPRequestHandler):
 #  MODEL
 #  The rules a post must follow, and the database that keeps the posts.
 #  Two tables: users (each person once) and posts (each post points at its
-#  author by the author's id). A new rule goes here, never in the controller
-#  or the view.
+#  author by the author's id). A reply is a post too: its reply_to is the id
+#  of the post it answers. That post can itself be a reply, but a reply to a
+#  reply cannot be answered. A new rule goes here, never in the controller or
+#  the view.
 # ============================================================================
 
 MAX_TEXT = 280
 MAX_AUTHOR = 40
+MAX_REPLY_DEPTH = 2  # a reply is 1 deep, a reply to a reply is 2 deep, and nothing goes deeper
 
 
 class RuleBroken(Exception):
@@ -129,14 +134,18 @@ def create_tables(db_path):
     connection.execute("CREATE TABLE IF NOT EXISTS posts ("
                        "id INTEGER PRIMARY KEY, "
                        "author_id INTEGER NOT NULL REFERENCES users(id), "
-                       "text TEXT NOT NULL, posted_at TEXT NOT NULL)")
+                       "text TEXT NOT NULL, posted_at TEXT NOT NULL, "
+                       "reply_to INTEGER REFERENCES posts(id))")
+    if old and "reply_to" not in old:
+        # A database from before replies. Add the new column, and keep its posts.
+        connection.execute("ALTER TABLE posts ADD COLUMN reply_to INTEGER REFERENCES posts(id)")
     connection.commit()
     connection.close()
 
 
 # Each post, with its author's name looked up in users. The view reads row["author"].
-POSTS_WITH_AUTHORS = ("SELECT posts.id, users.name AS author, posts.text, posts.posted_at "
-                      "FROM posts JOIN users ON users.id = posts.author_id")
+POSTS_WITH_AUTHORS = ("SELECT posts.id, users.name AS author, posts.text, posts.posted_at, "
+                      "posts.reply_to FROM posts JOIN users ON users.id = posts.author_id")
 
 
 def check_rules(author, text):
@@ -162,23 +171,67 @@ def user_id_for(connection, name):
     return connection.execute("INSERT INTO users (name) VALUES (?)", (name,)).lastrowid
 
 
-def save_post(db_path, author, text):
-    """Check the rules, save the post, and return the saved row."""
+def depth_of(connection, post_id):
+    """Return how deep a post is: 0 for a post, 1 for a reply, 2 for a reply to a reply.
+
+    Return None if there is no post with this id.
+    """
+    find = "SELECT reply_to FROM posts WHERE id = ?"
+    try:
+        row = connection.execute(find, (post_id,)).fetchone()
+    except OverflowError:  # a number too large for the database is not a post either
+        row = None
+    if row is None:
+        return None
+    depth = 0
+    while row["reply_to"] is not None:  # walk up, one answered post at a time
+        depth += 1
+        row = connection.execute(find, (row["reply_to"],)).fetchone()
+    return depth
+
+
+def check_reply_to(connection, reply_to):
+    """Return the id of the post being answered (None for a new post), or raise RuleBroken.
+
+    The post being answered may be a reply itself: that is a reply to a reply.
+    A reply to a reply cannot be answered, so replies stop at MAX_REPLY_DEPTH.
+    """
+    if reply_to is None:
+        return None
+    # In Python, True and False count as whole numbers, so they are refused by name.
+    if isinstance(reply_to, bool) or not isinstance(reply_to, int):
+        raise RuleBroken("A reply must name the post it answers by its id, a whole number.")
+    depth = depth_of(connection, reply_to)
+    if depth is None:
+        raise RuleBroken("The post you are replying to does not exist.")
+    if depth >= MAX_REPLY_DEPTH:
+        raise RuleBroken(f"Replies go only {MAX_REPLY_DEPTH} levels deep, "
+                         "so this reply cannot be answered.")
+    return reply_to
+
+
+def save_post(db_path, author, text, reply_to=None):
+    """Check the rules, save the post, and return the saved row.
+
+    `reply_to` is the id of the post this one answers, or None for a new post.
+    """
     author, text = check_rules(author, text)
     connection = connect(db_path)
-    author_id = user_id_for(connection, author)
-    cursor = connection.execute(
-        "INSERT INTO posts (author_id, text, posted_at) VALUES (?, ?, ?)",
-        (author_id, text, time.strftime("%H:%M")))
-    connection.commit()
-    row = connection.execute(POSTS_WITH_AUTHORS + " WHERE posts.id = ?",
-                             (cursor.lastrowid,)).fetchone()
-    connection.close()
-    return row
+    try:
+        reply_to = check_reply_to(connection, reply_to)
+        author_id = user_id_for(connection, author)
+        cursor = connection.execute(
+            "INSERT INTO posts (author_id, text, posted_at, reply_to) VALUES (?, ?, ?, ?)",
+            (author_id, text, time.strftime("%H:%M"), reply_to))
+        connection.commit()
+        return connection.execute(POSTS_WITH_AUTHORS + " WHERE posts.id = ?",
+                                  (cursor.lastrowid,)).fetchone()
+    finally:
+        connection.close()  # also when a rule was broken
 
 
 def posts_after(db_path, after):
-    """Return every post with an id larger than `after`, oldest first."""
+    """Return every post with an id larger than `after`, replies too, oldest first."""
     connection = connect(db_path)
     rows = connection.execute(POSTS_WITH_AUTHORS + " WHERE posts.id > ? ORDER BY posts.id",
                               (after,)).fetchall()
@@ -192,8 +245,9 @@ def posts_after(db_path, after):
 # ============================================================================
 
 def post_to_json(row):
-    return {"id": row["id"], "author": row["author"],
-            "text": row["text"], "posted_at": row["posted_at"]}
+    # reply_to is the id of the post this one answers. It is None for a post that is not a reply.
+    return {"id": row["id"], "author": row["author"], "text": row["text"],
+            "posted_at": row["posted_at"], "reply_to": row["reply_to"]}
 
 
 def posts_to_json(rows):
