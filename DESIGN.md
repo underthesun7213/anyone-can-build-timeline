@@ -16,7 +16,8 @@ the other has a backend that every window shares.
 ## 2. Not in this version
 
 - No accounts, passwords or sign-in. Each window types a display name.
-- No follows, likes, replies, deleting or editing. They are left for whoever extends the app.
+- No follows, likes, deleting or editing. They are left for whoever extends the app.
+- No replies deeper than a reply to a reply.
 - No pictures. A picture needs a second kind of storage for its files, which is a design of its own.
 - No realtime connection (no WebSockets). The page asks for new posts once a second.
 - Nothing reachable from another machine. The server listens on `127.0.0.1` only.
@@ -29,6 +30,13 @@ One screen, the same in both versions:
 - **The timeline.** A name field at the top, a *What is happening?* box with a live count
   (*x / 280*) and a **Post** button, and the timeline below it, newest first (author, text, time).
   Its one job: show everyone's posts, and take a new one.
+- **Replies.** Each post has a **Reply** button. Pressing it opens a small reply form under that
+  post: a name field, a box with its own live count, a **Send** button and a **Cancel** button. The
+  name field holds the same name as the one at the top: typing in either changes both. Pressing
+  **Reply** again, or **Cancel**, closes the form. There is one reply form, so opening it under
+  another post closes it under the first. The top box only takes new posts. A reply has a **Reply**
+  button too, so a reply can be answered. A reply to a reply has no button: it cannot be answered.
+  Replies sit under the post they answer, oldest first, each level moved in one step.
 
 Large type and high contrast, so that it can be read from across a room.
 
@@ -67,13 +75,15 @@ index.html · style.css · app.js  ──  server.py  ────────�
 
 | Request | What goes in | What comes out |
 |---|---|---|
-| `POST /posts` | `{"author": "Aiko", "text": "the library is open late tonight"}` | the saved post, with its `id` and `posted_at` · or `400` with the rule it broke |
-| `GET /posts?after=12` | the last `id` this window has | every post with a larger `id`, oldest first |
+| `POST /posts` | `{"author": "Aiko", "text": "the library is open late tonight"}` · a reply adds `"reply_to": 12`, the `id` of the post it answers | the saved post, with its `id`, `posted_at` and `reply_to` · or `400` with the rule it broke |
+| `GET /posts?after=12` | the last `id` this window has | every post with a larger `id`, replies too, oldest first |
 | `GET /` and the three files | nothing | the page |
 
 **The model's rules:** text is not empty after trimming · text is at most 280 characters · author
-is not empty, at most 40 characters. The server checks them even though the page checks for an
-empty post too, because a user can change anything that runs on their own device.
+is not empty, at most 40 characters · a reply answers a post that exists · replies go at most 2
+deep, so a reply to a reply cannot be answered. The server checks them even though the page checks
+for an empty post too, and shows no **Reply** button on a reply to a reply, because a user can
+change anything that runs on their own device.
 
 ## 5. The data model
 
@@ -90,9 +100,16 @@ Two tables:
 | `author_id` | integer, foreign key: the `id` of a row in `users` |
 | `text` | text |
 | `posted_at` | text, `HH:MM`, local time |
+| `reply_to` | integer, foreign key: the `id` of the post this one answers · empty for a post that is not a reply |
 
 Example rows: `users` `1 · Aiko` · `2 · Ben` · `posts` `1 · 1 · the library is open late tonight ·
-15:42` · `2 · 2 · thanks! · 15:42`.
+15:42 · (empty)` · `2 · 2 · until when? · 15:42 · 1` · `3 · 1 · until ten · 15:43 · 2`.
+
+A reply is a post, so there is no third table. Post 2 answers post 1, and post 3 answers post 2: a
+reply to a reply. Nothing can answer post 3. The depth of a post is not saved: the model counts it
+by walking up `reply_to`, so the fact is kept in one place. A reply always has a larger `id` than
+the post it answers, so a window that reads the posts oldest first has every post on the screen
+before its replies arrive.
 
 There are no accounts, so a user is found by name: the first post with a new name adds that person
 to `users`, and every later post with the same name points at the same row. Each name is kept once,
@@ -103,9 +120,12 @@ and each post points at its author by number.
 1. When a post is sent with text, it should come back with an `id` and a time, and the same name
    should always point at the same user.
 2. When a window asks for posts after an `id`, it should get only newer posts, oldest first.
+   When a reply is sent, it should come back pointing at the post it answers, and a reply to a
+   reply should be saved the same way.
 3. When two windows are open on the backend version, a post from one should appear in the other
    within a second.
-4. **And when it goes wrong:** when a post is empty, or longer than 280 characters, the server
+4. **And when it goes wrong:** when a post is empty, or longer than 280 characters, or answers a
+   post that does not exist, or answers a reply to a reply, the server
    should refuse it and say which rule it broke. When the server is stopped, the page should say
    *Cannot reach the server*, and recover by itself when the server starts again.
 
@@ -144,7 +164,7 @@ page-only/           open index.html; nothing to start
 with-backend/        make run, then http://localhost:8009
   index.html  style.css  app.js
   server.py          controller · model · view, labelled
-  test_server.py     unittest: the rules, saving, "after", one real round trip
+  test_server.py     unittest: the rules, saving, replies, "after", real round trips
 ```
 
 `timeline.db` is created next to `server.py` and is git-ignored. `make reset` deletes it.

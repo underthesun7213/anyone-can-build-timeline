@@ -26,7 +26,24 @@
 
     <p id="status" class="status" role="status"></p>
 
-    <ol id="timeline" class="timeline" aria-label="Posts, newest first"></ol>
+    <ol id="timeline" class="timeline" aria-label="Posts, newest first, each with its replies"></ol>
+
+    <!-- The reply form. There is one, and it waits here, hidden.
+         A Reply button moves it under its post and shows it. -->
+    <form id="reply-form" class="reply-form" hidden>
+      <label for="reply-author">Your name</label>
+      <input id="reply-author" type="text" autocomplete="off" placeholder="Aiko">
+      <label id="reply-label" for="reply-text">Your reply</label>
+      <textarea id="reply-text" rows="2" placeholder="Write a reply"></textarea>
+      <div class="post-row">
+        <span id="reply-count" class="count">0 / 280</span>
+        <span class="reply-buttons">
+          <button id="reply-cancel" class="small-button" type="button">Cancel</button>
+          <button type="submit">Send</button>
+        </span>
+      </div>
+      <p id="reply-status" class="status" role="status"></p>
+    </form>
   </main>
 
   <script src="app.js"></script>
