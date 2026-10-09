@@ -3,7 +3,10 @@
 A small app where people post short messages. Everyone's posts appear on one timeline, newest
 first. Press **Reply** under a post, and a small form opens right there to answer it. A reply can
 be answered too, and that is the deepest it goes: a reply to a reply has no **Reply** button. Each
-reply sits under the post it answers. It comes in two versions with the same screen:
+reply sits under the post it answers. Press **Like** under a post to like it, and see how many
+people like it. One name can like one post only once. Press **Follow** next to a name to follow
+that person, and turn on **Only the people I follow** to see just their conversations, and your
+own. It comes in two versions with the same screen:
 
 - **`page-only/`**: everything runs in the browser. There is no server. Each window keeps its own
   posts, so nothing is shared.
@@ -58,17 +61,20 @@ Stop the server with **Ctrl+C**, and both windows say *Cannot reach the server*.
 
 ## Open the store
 
-The backend keeps everything in one file, `with-backend/timeline.db`, in two tables: `users`,
-with each person once, and `posts`, where each post points at its author by number. To see what is
-inside:
+The backend keeps everything in one file, `with-backend/timeline.db`, in four tables: `users`,
+with each person once, `posts`, where each post points at its author by number, `likes`, where
+each line says that one user likes one post, and `follows`, where each line says that one user
+follows another. To see what is inside:
 
 ```
-sqlite3 with-backend/timeline.db 'select * from users; select * from posts'
+sqlite3 with-backend/timeline.db 'select * from users; select * from posts; select * from likes; select * from follows'
 ```
 
 A user line is `id|name`. A post line is `id|author_id|text|posted_at|reply_to`: the `author_id`
 is the `id` of a user, and `reply_to` is the `id` of the post this one answers. It is empty for a
-post that is not a reply.
+post that is not a reply. A like line is `post_id|user_id`: that user likes that post. A like has
+no `id` of its own, because the pair is the like. A follow line is `follower_id|followed_id`: the
+first user follows the second. It has no `id` of its own either.
 
 To start again with an empty timeline, stop the server and run `make reset`.
 
@@ -79,9 +85,10 @@ make test
 ```
 
 This runs the checks in `with-backend/test_server.py`. They test the rules (an empty post and a
-post over 280 characters are refused, and so is an answer to a reply to a reply), saving a post,
-replying to a post and to a reply, asking only for newer posts, and full trips through the real
-server.
+post over 280 characters are refused, so is an answer to a reply to a reply, a second like from
+the same name, and following yourself), saving a post, replying to a post and to a reply, liking a
+post and counting its likes, following someone and asking for only the conversations of the
+people you follow, asking only for newer posts, and full trips through the real server.
 
 ## Things to try
 

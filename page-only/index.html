@@ -26,10 +26,19 @@
 
     <p id="status" class="status" role="status"></p>
 
+    <!-- The switch between everyone's posts and the conversations of the people I follow.
+         모두의 글과 내가 팔로우하는 사람들의 대화 사이를 오가는 스위치. -->
+    <label class="switch">
+      <input id="following-only" type="checkbox">
+      Only the people I follow
+    </label>
+
     <ol id="timeline" class="timeline" aria-label="Posts, newest first, each with its replies"></ol>
 
     <!-- The reply form. There is one, and it waits here, hidden.
-         A Reply button moves it under its post and shows it. -->
+         A Reply button moves it under its post and shows it.
+         답글 폼. 하나뿐이고, 여기서 숨은 채 기다립니다.
+         Reply 버튼이 이것을 그 글 아래로 옮겨서 보여 줍니다. -->
     <form id="reply-form" class="reply-form" hidden>
       <label for="reply-author">Your name</label>
       <input id="reply-author" type="text" autocomplete="off" placeholder="Aiko">

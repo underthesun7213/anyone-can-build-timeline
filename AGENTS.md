@@ -7,7 +7,9 @@ use it. When you change code, say which file changed and why.
 
 Timeline is a small app where people post short messages, and everyone's posts appear on one
 timeline, newest first. A post can be answered with a reply, and a reply can be answered too, but a
-reply to a reply cannot. The replies sit under the post they answer. It comes in two versions with
+reply to a reply cannot. The replies sit under the post they answer. A post can be liked, once per
+name, and shows how many like it. A name can follow another name, and switch the timeline to only
+the conversations started by the people it follows, and by itself. It comes in two versions with
 the same screen:
 
 - `page-only/` runs only in the browser. It has no server, so nothing is shared between windows.
@@ -31,20 +33,28 @@ the same screen:
 The three parts of `server.py`:
 
 - **Controller** (`TimelineHandler`): reads each request and picks what to do.
-- **Model** (`check_rules`, `depth_of`, `check_reply_to`, `user_id_for`, `save_post`, `posts_after`):
-  the rules a post must follow, and the database, in two tables: `users` (each person once) and `posts`
-  (each post points at its author by `author_id`). A name is kept once, in `users`; never copy it into
-  another table. A reply is a row in `posts` too: its `reply_to` is the `id` of the post it answers.
-  For a post that is not a reply, `reply_to` is empty. Replies stop at `MAX_REPLY_DEPTH`: a reply is
-  1 deep, a reply to a reply is 2 deep, and a reply to a reply cannot be answered.
-- **View** (`post_to_json`, `posts_to_json`): turns database rows into the JSON the page reads.
+- **Model** (`check_name`, `check_rules`, `check_post_id`, `depth_of`, `check_reply_to`, `user_id_for`,
+  `save_post`, `save_like`, `like_counts`, `save_follow`, `names_followed_by`, `following_names`,
+  `posts_after`): the rules a post, a like and a follow must follow, and the database, in four tables:
+  `users` (each person once), `posts` (each post points at its author by `author_id`), `likes` (each
+  like points at a post by `post_id` and at a user by `user_id`) and `follows` (each follow points at
+  two users, `follower_id` and `followed_id`). A name is kept once, in `users`; never copy it into
+  another table. A reply is a row in `posts` too: its
+  `reply_to` is the `id` of the post it answers. For a post that is not a reply, `reply_to` is empty.
+  Replies stop at `MAX_REPLY_DEPTH`: a reply is 1 deep, a reply to a reply is 2 deep, and a reply to
+  a reply cannot be answered. A like has no `id` of its own: the pair (`post_id`, `user_id`) is its
+  key, so one user can like one post only once. The number of likes is never stored; it is counted.
+  A follow is a pair in the same way. The following timeline is a query in `posts_after`: the
+  conversations started by someone the name follows, or by the name itself, with all their replies.
+- **View** (`post_to_json`, `posts_to_json`, `like_counts_to_json`, `names_to_json`): turns database
+  rows into the JSON the page reads.
 
 ## How to run it
 
 - Page-only: open `page-only/index.html` in a browser. Nothing to start.
 - With a backend: `make run`, then open <http://localhost:8009>. Press Ctrl+C to stop.
 - Start again with an empty timeline: `make reset`.
-- See what is saved: `sqlite3 with-backend/timeline.db 'select * from users; select * from posts'`
+- See what is saved: `sqlite3 with-backend/timeline.db 'select * from users; select * from posts; select * from likes; select * from follows'`
 
 It needs only `python3` (3.9 or newer). Do not add libraries, packages or a build step.
 Write code that runs on Python 3.9: no `match` statements, and no `X | Y` in type hints.

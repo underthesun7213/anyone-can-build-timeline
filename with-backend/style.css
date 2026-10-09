@@ -1,8 +1,11 @@
 /* Timeline: how the page looks.
    This file is the same in page-only/ and with-backend/, so both versions look the same.
-   The type is large because the page is read from the back of a room. */
+   The type is large because the page is read from the back of a room.
+   Timeline: 화면의 모양. 이 파일은 page-only/와 with-backend/에서 똑같아서, 두 버전이 같은 모양입니다.
+   글자가 큰 이유는 강의실 뒤에서도 읽을 수 있게 하기 위해서입니다. */
 
-/* The colours, in one place. Dark is the default. */
+/* The colours, in one place. Dark is the default.
+   색을 한곳에 모아 둡니다. 기본은 어두운 모드입니다. */
 :root {
   --background: #002b36;
   --card: #073642;
@@ -15,7 +18,8 @@
   --border: #586e75;
 }
 
-/* The same colours for a computer set to light mode. */
+/* The same colours for a computer set to light mode.
+   밝은 모드로 설정된 컴퓨터를 위한 같은 색들. */
 @media (prefers-color-scheme: light) {
   :root {
     --background: #fdf6e3;
@@ -151,7 +155,8 @@ button {
   overflow-wrap: anywhere;
 }
 
-/* The small buttons: Reply under each post, and Cancel in the reply form. */
+/* The small buttons: Reply under each post, and Cancel in the reply form.
+   작은 버튼들: 글마다 있는 Reply, 답글 폼의 Cancel. */
 .small-button {
   padding: 4px 16px;
   border: 2px solid var(--border);
@@ -160,23 +165,75 @@ button {
   font-size: 18px;
 }
 
-/* The Reply button of a post. */
-.post > .small-button {
+/* The row under a post: Like, how many like it, Reply, and a note when a like is refused.
+   글 아래의 한 줄: Like, 좋아요 수, Reply, 그리고 좋아요가 거절됐을 때의 설명. */
+.post-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   margin-top: 8px;
 }
 
-/* While the reply form is open under a post, its Reply button is filled in. */
+.like-count {
+  color: var(--quiet);
+  font-size: 20px;
+}
+
+.post-note {
+  color: var(--warning);
+  font-weight: 700;
+  font-size: 18px;
+}
+
+/* The Follow button, next to the name of the person who wrote the post.
+   글쓴이 이름 옆의 Follow 버튼. */
+.follow-button {
+  margin-left: 12px;
+  padding: 2px 12px;
+  font-size: 16px;
+}
+
+/* A button that says "Following" cannot be pressed again.
+   "Following"이라고 쓰인 버튼은 다시 누를 수 없습니다. */
+.small-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* The switch above the timeline: everyone, or only the people I follow.
+   타임라인 위의 스위치: 모두, 또는 내가 팔로우하는 사람만. */
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  color: var(--quiet);
+  font-weight: 600;
+}
+
+.switch input {
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+}
+
+/* While the reply form is open under a post, its Reply button is filled in.
+   글 아래에 답글 폼이 열려 있는 동안, 그 글의 Reply 버튼은 색이 채워집니다. */
 .small-button[aria-expanded="true"] {
   background: var(--border);
   color: var(--background);
 }
 
-/* The reply form opens under a post when its Reply button is pressed. */
+/* The reply form opens under a post when its Reply button is pressed.
+   답글 폼은 Reply 버튼을 누르면 그 글 아래에 열립니다. */
 .reply-form {
   margin-top: 12px;
 }
 
-/* The name box in the reply form: a little space before "Your reply". */
+/* The name box in the reply form: a little space before "Your reply".
+   답글 폼의 이름 칸: "Your reply" 앞에 약간의 간격. */
 .reply-form input {
   margin-bottom: 12px;
 }
@@ -196,14 +253,17 @@ button {
   border-color: var(--border);
 }
 
-/* No empty space under the reply form while there is nothing to say. */
+/* No empty space under the reply form while there is nothing to say.
+   보여 줄 문제가 없을 때는 답글 폼 아래에 빈 공간을 두지 않습니다. */
 .reply-form .status {
   min-height: 0;
   margin: 8px 0 0;
 }
 
 /* The replies to a post sit under it. A reply to a reply sits one step further in,
-   and that is the deepest: a reply to a reply has no Reply button. */
+   and that is the deepest: a reply to a reply has no Reply button.
+   글의 답글들은 그 아래에 놓입니다. 답글의 답글은 한 단계 더 안쪽에 놓이고,
+   그것이 가장 깊은 단계입니다: 답글의 답글에는 Reply 버튼이 없습니다. */
 .replies {
   margin: 0;
   padding: 0;
