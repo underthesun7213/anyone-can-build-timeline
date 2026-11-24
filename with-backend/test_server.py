@@ -350,6 +350,42 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(server.post_to_log_line(row),
                          row["posted_at"] + "  Aiko: the library is open late tonight")
 
+    def test_an_author_can_delete_their_own_post_and_its_likes(self):
+        server.save_post(self.db_path, "Aiko", "first")
+        server.save_post(self.db_path, "Ben", "second")
+        server.save_like(self.db_path, "Ben", 1)
+        deleted = server.delete_post(self.db_path, " Aiko ", 1)
+        self.assertEqual(deleted, 1)
+        self.assertEqual([r["id"] for r in server.posts_after(self.db_path, 0)], [2])
+        self.assertEqual(server.like_counts(self.db_path), [])
+
+    def test_nobody_can_delete_someone_elses_post(self):
+        server.save_post(self.db_path, "Aiko", "first")
+        with self.assertRaises(server.RuleBroken):
+            server.delete_post(self.db_path, "Ben", 1)
+        self.assertEqual(len(server.posts_after(self.db_path, 0)), 1)
+
+    def test_a_post_with_replies_cannot_be_deleted(self):
+        server.save_post(self.db_path, "Aiko", "first")
+        server.save_post(self.db_path, "Ben", "reply", 1)
+        with self.assertRaises(server.RuleBroken):
+            server.delete_post(self.db_path, "Aiko", 1)
+        self.assertEqual(len(server.posts_after(self.db_path, 0)), 2)
+        # The reply itself has no replies, so its author can delete it, and then Aiko can delete hers.
+        # 답글 자체에는 답글이 없으므로 답글 작성자가 지울 수 있고, 그 뒤에는 Aiko도 자기 글을 지울 수 있습니다.
+        server.delete_post(self.db_path, "Ben", 2)
+        server.delete_post(self.db_path, "Aiko", 1)
+        self.assertEqual(server.posts_after(self.db_path, 0), [])
+
+    def test_deleting_a_missing_post_or_without_a_name_is_refused(self):
+        server.save_post(self.db_path, "Aiko", "first")
+        for bad_name in ("", "   ", None, "a" * 41):
+            with self.assertRaises(server.RuleBroken):
+                server.delete_post(self.db_path, bad_name, 1)
+        for missing in (99, 0, -1, 10 ** 30, "1", 1.0, True, None):
+            with self.assertRaises(server.RuleBroken):
+                server.delete_post(self.db_path, "Aiko", missing)
+
 
 class RealServerTest(unittest.TestCase):
 
@@ -463,6 +499,32 @@ class RealServerTest(unittest.TestCase):
         self.assertEqual(caught.exception.code, 400)
         reason = json.loads(caught.exception.read())["error"]
         self.assertIn("cannot be answered", reason)
+        caught.exception.close()
+
+    def delete(self, data):
+        request = urllib.request.Request(
+            self.base + "/posts",
+            data=json.dumps(data).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="DELETE",
+        )
+        return urllib.request.urlopen(request)
+
+    def test_delete_own_post_then_get(self):
+        self.post({"author": "Aiko", "text": "hello"}).close()
+        with self.delete({"author": "Aiko", "post_id": 1}) as answer:
+            self.assertEqual(answer.status, 200)
+            self.assertEqual(json.loads(answer.read()), {"deleted": 1})
+        with urllib.request.urlopen(self.base + "/posts?after=0") as answer:
+            self.assertEqual(json.loads(answer.read()), [])
+
+    def test_deleting_someone_elses_post_gets_400_and_a_reason(self):
+        self.post({"author": "Aiko", "text": "hello"}).close()
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.delete({"author": "Ben", "post_id": 1})
+        self.assertEqual(caught.exception.code, 400)
+        reason = json.loads(caught.exception.read())["error"]
+        self.assertIn("your own", reason)
         caught.exception.close()
 
 

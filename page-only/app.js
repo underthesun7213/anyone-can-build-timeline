@@ -68,6 +68,10 @@ const likeCounts = new Map();
 // 화면에 있는 이름마다 그 Follow 버튼들. 그 사람의 글마다 하나씩 있습니다.
 const followButtons = new Map();
 
+// For each name on the screen, its Delete buttons: one on every post by that person.
+// 화면에 있는 이름마다 그 Delete 버튼들. 그 사람의 글마다 하나씩 있습니다.
+const deleteButtons = new Map();
+
 // Read the saved posts from this window. Oldest first.
 // 이 창에 저장된 글을 읽습니다. 오래된 것부터.
 function loadPosts() {
@@ -235,6 +239,28 @@ function brokenFollowRule(name, followed, posts, follows) {
   return "";
 }
 
+// The rules for deleting a post. Returns the broken rule, or "" if every rule is kept.
+// 글 삭제의 규칙들. 어긴 규칙을 돌려주고, 모든 규칙을 지켰으면 ""를 돌려줍니다.
+function brokenDeleteRule(name, postId, posts) {
+  if (name === "") {
+    return "The name must not be empty.";
+  }
+  if (name.length > MAX_AUTHOR) {
+    return "The name must be 40 characters or fewer.";
+  }
+  const target = posts.find(function (post) { return post.id === postId; });
+  if (!target) {
+    return "The post you are deleting does not exist.";
+  }
+  if (target.author !== name) {
+    return "You can only delete your own post.";
+  }
+  if (posts.some(function (post) { return post.reply_to === postId; })) {
+    return "Cannot delete a post that has replies.";
+  }
+  return "";
+}
+
 // The time now, as HH:MM.
 // 지금 시각, HH:MM 형식.
 function timeNow() {
@@ -345,7 +371,22 @@ function showPost(post) {
     replyLists.set(post.id, replies);
     item.append(replies);
   }
-  actions.append(note);
+
+  // Delete button: shown only when the name at the top matches the post's author.
+  // Delete 버튼: 화면 맨 위의 이름과 글쓴이가 같을 때만 보여 줍니다.
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "small-button delete-button";
+  deleteButton.textContent = "Delete";
+  deleteButton.hidden = authorBox.value.trim() !== post.author;
+  deleteButton.addEventListener("click", function () {
+    deletePost(post, note);
+  });
+  if (!deleteButtons.has(post.author)) {
+    deleteButtons.set(post.author, []);
+  }
+  deleteButtons.get(post.author).push(deleteButton);
+  actions.append(deleteButton, note);
 }
 
 // Show how many users like a post, next to its Like button.
@@ -367,6 +408,17 @@ function markFollowing(names) {
     for (const button of buttons) {
       button.textContent = followed ? "Following" : "Follow";
       button.disabled = followed;
+    }
+  }
+}
+
+// Show the Delete button only on posts written by `me` (the name at the top).
+// `me`(맨 위의 이름)가 쓴 글에만 Delete 버튼을 보여 줍니다.
+function markDeletable(me) {
+  for (const [name, buttons] of deleteButtons) {
+    const mine = name === me && me !== "";
+    for (const button of buttons) {
+      button.hidden = !mine;
     }
   }
 }
@@ -454,7 +506,8 @@ function add(author, text, replyToId, say) {
 
   // reply_to is the id of the post this one answers. It is null for a post that is not a reply.
   // reply_to는 이 글이 답하는 글의 id입니다. 답글이 아니면 null입니다.
-  const post = { id: posts.length + 1, author: author, text: text, posted_at: timeNow(),
+  const nextId = posts.reduce(function (max, one) { return Math.max(max, one.id); }, 0) + 1;
+  const post = { id: nextId, author: author, text: text, posted_at: timeNow(),
                  reply_to: replyToId };
   posts.push(post);
   savePosts(posts);
@@ -474,7 +527,7 @@ function showTimeline() {
   const following = followedBy(me, loadFollows());
   closeReply();
   timeline.replaceChildren();
-  for (const map of [replyLists, depths, likeCounts, followButtons]) {
+  for (const map of [replyLists, depths, likeCounts, followButtons, deleteButtons]) {
     map.clear();
   }
   for (const post of posts) {
@@ -484,6 +537,7 @@ function showTimeline() {
     }
   }
   markFollowing(following);
+  markDeletable(me);
   // Ask for a name while the switch is on and there is none; take the question away once there is.
   // 스위치가 켜져 있는데 이름이 없으면 이름을 묻고, 이름이 생기면 그 질문을 지웁니다.
   const askForName = "Type your name first, to see the people you follow.";
@@ -529,6 +583,23 @@ function like(post, note) {
   showLikeCount(post.id, countLikes(post.id, likes));
 }
 
+// The Delete button of a post: check the rules, then remove the post and its likes.
+// `note` is where a refused delete is explained, next to the button.
+// 글의 Delete 버튼: 규칙을 검사한 뒤, 글과 그 좋아요를 지웁니다.
+// `note`는 거절된 삭제의 이유를 버튼 옆에 보여 주는 자리입니다.
+function deletePost(post, note) {
+  const name = authorBox.value.trim();
+  const posts = loadPosts();
+  const problem = brokenDeleteRule(name, post.id, posts);
+  if (problem !== "") {
+    note.textContent = problem;
+    return;
+  }
+  savePosts(posts.filter(function (one) { return one.id !== post.id; }));
+  saveLikes(loadLikes().filter(function (one) { return one.post_id !== post.id; }));
+  showTimeline();
+}
+
 // The Post button: add what is in the top box as a new post.
 // Post 버튼: 위쪽 칸의 내용을 새 글로 추가합니다.
 function addPost(event) {
@@ -560,9 +631,11 @@ showTimeline();
 // 한쪽 칸에 이름을 치면 다른 쪽에도 복사됩니다.
 authorBox.addEventListener("input", function () {
   replyAuthorBox.value = authorBox.value;
+  markDeletable(authorBox.value.trim());
 });
 replyAuthorBox.addEventListener("input", function () {
   authorBox.value = replyAuthorBox.value;
+  markDeletable(authorBox.value.trim());
 });
 
 textBox.addEventListener("input", function () {

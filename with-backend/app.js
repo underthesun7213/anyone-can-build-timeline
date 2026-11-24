@@ -61,6 +61,14 @@ const likeCounts = new Map();
 // 화면에 있는 이름마다 그 Follow 버튼들. 그 사람의 글마다 하나씩 있습니다.
 const followButtons = new Map();
 
+// For each name on the screen, its Delete buttons: one on every post by that person.
+// 화면에 있는 이름마다 그 Delete 버튼들. 그 사람의 글마다 하나씩 있습니다.
+const deleteButtons = new Map();
+
+// For each post on the screen, the item element on the timeline.
+// 화면에 있는 글마다 타임라인의 항목 요소.
+const postItems = new Map();
+
 // Put one post on the screen: a reply under the post it answers,
 // and any other post at the top of the timeline, so the newest is always first.
 // 글 하나를 화면에 놓습니다: 답글은 답하는 글 아래에,
@@ -75,6 +83,7 @@ function showPost(post) {
 
   const item = document.createElement("li");
   item.className = "post";
+  postItems.set(post.id, item);
 
   const author = document.createElement("span");
   author.className = "post-author";
@@ -169,7 +178,22 @@ function showPost(post) {
     replyLists.set(post.id, replies);
     item.append(replies);
   }
-  actions.append(note);
+
+  // Delete button: shown only when the name at the top matches the post's author.
+  // Delete 버튼: 화면 맨 위의 이름과 글쓴이가 같을 때만 보여 줍니다.
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "small-button delete-button";
+  deleteButton.textContent = "Delete";
+  deleteButton.hidden = authorBox.value.trim() !== post.author;
+  deleteButton.addEventListener("click", function () {
+    deletePost(post, note);
+  });
+  if (!deleteButtons.has(post.author)) {
+    deleteButtons.set(post.author, []);
+  }
+  deleteButtons.get(post.author).push(deleteButton);
+  actions.append(deleteButton, note);
 }
 
 // Show how many users like a post, next to its Like button.
@@ -191,6 +215,17 @@ function markFollowing(names) {
     for (const button of buttons) {
       button.textContent = followed ? "Following" : "Follow";
       button.disabled = followed;
+    }
+  }
+}
+
+// Show the Delete button only on posts written by `me` (the name at the top).
+// `me`(맨 위의 이름)가 쓴 글에만 Delete 버튼을 보여 줍니다.
+function markDeletable(me) {
+  for (const [name, buttons] of deleteButtons) {
+    const mine = name === me && me !== "";
+    for (const button of buttons) {
+      button.hidden = !mine;
     }
   }
 }
@@ -264,7 +299,7 @@ function startOver(name) {
   lastId = 0;
   closeReply();
   timeline.replaceChildren();
-  for (const map of [replyLists, depths, likeCounts, followButtons]) {
+  for (const map of [replyLists, depths, likeCounts, followButtons, deleteButtons, postItems]) {
     map.clear();
   }
 }
@@ -302,6 +337,7 @@ async function checkForNewPosts() {
     // 이 이름이 누구를 팔로우하는지. Follow 버튼마다 필요할 때 "Following"이라고 쓰기 위해서입니다.
     const following = await (await fetch("/follows?by=" + encodeURIComponent(name))).json();
     markFollowing(following);
+    markDeletable(name);
     // The server answered, so take away "Cannot reach the server" wherever it is shown.
     // 서버가 답했으므로, "Cannot reach the server"가 보이는 곳마다 지웁니다.
     for (const line of [statusLine, replyStatus]) {
@@ -420,6 +456,38 @@ async function follow(name, note) {
   }
 }
 
+// The Delete button of a post: ask the server to delete this post.
+// `note` is where a refused delete is explained, next to the button.
+// 글의 Delete 버튼: 서버에 이 글을 지워 달라고 요청합니다.
+// `note`는 거절된 삭제의 이유를 버튼 옆에 보여 주는 자리입니다.
+async function deletePost(post, note) {
+  try {
+    const response = await fetch("/posts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: authorBox.value, post_id: post.id }),
+    });
+    const answer = await response.json();
+    if (!response.ok) {
+      note.textContent = answer.error;
+      return;
+    }
+    if (replyTo === post.id) {
+      closeReply();
+    }
+    const item = postItems.get(post.id);
+    if (item) {
+      item.remove();
+    }
+    postItems.delete(post.id);
+    replyLists.delete(post.id);
+    depths.delete(post.id);
+    likeCounts.delete(post.id);
+  } catch (error) {
+    note.textContent = CANNOT_REACH;
+  }
+}
+
 // The Post button: send what is in the top box as a new post.
 // Post 버튼: 위쪽 칸의 내용을 새 글로 보냅니다.
 async function sendPost(event) {
@@ -451,9 +519,11 @@ async function sendReply(event) {
 // 한쪽 칸에 이름을 치면 다른 쪽에도 복사됩니다.
 authorBox.addEventListener("input", function () {
   replyAuthorBox.value = authorBox.value;
+  markDeletable(authorBox.value.trim());
 });
 replyAuthorBox.addEventListener("input", function () {
   authorBox.value = replyAuthorBox.value;
+  markDeletable(authorBox.value.trim());
 });
 
 textBox.addEventListener("input", function () {

@@ -118,6 +118,27 @@ class TimelineHandler(BaseHTTPRequestHandler):
             return
         self.send_json(201, answer)
 
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        if path != "/posts":
+            self.send_json(404, {"error": "You can only delete a post at /posts"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            data = json.loads(self.rfile.read(length))
+        except ValueError:
+            self.send_json(400, {"error": "The request must be JSON."})
+            return
+        if not isinstance(data, dict):
+            self.send_json(400, {"error": "The request must be a JSON object."})
+            return
+        try:
+            post_id = delete_post(self.server.db_path, data.get("author"), data.get("post_id"))
+        except RuleBroken as problem:
+            self.send_json(400, {"error": str(problem)})
+            return
+        self.send_json(200, {"deleted": post_id})
+
     def send_json(self, status, data):
         body = json.dumps(data).encode("utf-8")
         self.send_answer(status, "application/json; charset=utf-8", body)
@@ -368,6 +389,36 @@ def save_post(db_path, author, text, reply_to=None):
                                   (cursor.lastrowid,)).fetchone()
     finally:
         connection.close()  # also when a rule was broken / 규칙을 어겼을 때도
+
+
+def delete_post(db_path, author, post_id):
+    """Check the rules, delete the post and its likes, and return its id.
+
+    Only the author of a post can delete it, and only if no reply answers it yet.
+
+    규칙을 검사하고, 글과 그 좋아요를 지우고, 그 id를 돌려줍니다.
+    글을 쓴 사람만 지울 수 있고, 답글이 아직 없는 글만 지울 수 있습니다.
+    """
+    author = check_name(author)
+    connection = connect(db_path)
+    try:
+        check_post_id(connection, post_id, "deleting")
+        row = connection.execute(
+            "SELECT users.name AS author FROM posts "
+            "JOIN users ON users.id = posts.author_id WHERE posts.id = ?",
+            (post_id,)).fetchone()
+        if row["author"] != author:
+            raise RuleBroken("You can only delete your own post.")
+        reply = connection.execute("SELECT 1 FROM posts WHERE reply_to = ?",
+                                   (post_id,)).fetchone()
+        if reply is not None:
+            raise RuleBroken("Cannot delete a post that has replies.")
+        connection.execute("DELETE FROM likes WHERE post_id = ?", (post_id,))
+        connection.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+        connection.commit()
+        return post_id
+    finally:
+        connection.close()
 
 
 def save_like(db_path, author, post_id):
